@@ -24,7 +24,7 @@ import sjsonnew.support.scalajson.unsafe.CompactPrinter
  */
 private[sbt] final class TaskTraceEvent
     extends AbstractTaskExecuteProgress
-    with ExecuteProgress[Task] {
+    with ExecuteProgress[Task, State] {
   import AbstractTaskExecuteProgress.Timer
   private[this] var start = 0L
   private[this] val console = ConsoleOut.systemOut

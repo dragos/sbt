@@ -24,7 +24,7 @@ import sbt.util.{ Level, Logger }
  */
 private[sbt] final class TaskTimings(reportOnShutdown: Boolean, logger: Logger)
     extends AbstractTaskExecuteProgress
-    with ExecuteProgress[Task] {
+    with ExecuteProgress[Task, State] {
   @deprecated("Use the constructor that takes an sbt.util.Logger parameter.", "1.3.3")
   def this(reportOnShutdown: Boolean) =
     this(reportOnShutdown, new Logger {

@@ -27,7 +27,7 @@ private[sbt] class TaskProgress(
     threshold: FiniteDuration,
     logger: Logger
 ) extends AbstractTaskExecuteProgress
-    with ExecuteProgress[Task]
+    with ExecuteProgress[Task, State]
     with AutoCloseable {
   private[this] val lastTaskCount = new AtomicInteger(0)
   private[this] val reportLoop = new AtomicReference[AutoCloseable]

@@ -102,7 +102,7 @@ object TaskCancellationStrategy {
 sealed trait EvaluateTaskConfig {
   def restrictions: Seq[Tags.Rule]
   def checkCycles: Boolean
-  def progressReporter: ExecuteProgress[Task]
+  def progressReporter: ExecuteProgress[Task, State]
   def cancelStrategy: TaskCancellationStrategy
 
   /** If true, we force a finalizer/gc run (or two) after task execution completes when needed. */
@@ -118,7 +118,7 @@ object EvaluateTaskConfig {
   def apply(
       restrictions: Seq[Tags.Rule],
       checkCycles: Boolean,
-      progressReporter: ExecuteProgress[Task],
+      progressReporter: ExecuteProgress[Task, State],
       cancelStrategy: TaskCancellationStrategy,
       forceGarbageCollection: Boolean,
       minForcegcInterval: Duration
@@ -135,7 +135,7 @@ object EvaluateTaskConfig {
   private[this] case class DefaultEvaluateTaskConfig(
       restrictions: Seq[Tags.Rule],
       checkCycles: Boolean,
-      progressReporter: ExecuteProgress[Task],
+      progressReporter: ExecuteProgress[Task, State],
       cancelStrategy: TaskCancellationStrategy,
       forceGarbageCollection: Boolean,
       minForcegcInterval: Duration
@@ -168,7 +168,7 @@ object EvaluateTask {
 
   @nowarn
   lazy private val sharedProgress = new TaskTimings(reportOnShutdown = true)
-  def taskTimingProgress: Option[ExecuteProgress[Task]] =
+  def taskTimingProgress: Option[ExecuteProgress[Task, State]] =
     if (SysProp.taskTimingsOnShutdown) Some(sharedProgress)
     else None
 
@@ -195,14 +195,15 @@ object EvaluateTask {
   }
 
   lazy private val sharedTraceEvent = new TaskTraceEvent()
-  def taskTraceEvent: Option[ExecuteProgress[Task]] =
+  def taskTraceEvent: Option[ExecuteProgress[Task, State]] =
     if (SysProp.traces) {
       Some(sharedTraceEvent)
     } else None
 
   // sbt-pgp calls this
   @deprecated("No longer used", "1.3.0")
-  private[sbt] def defaultProgress(): ExecuteProgress[Task] = ExecuteProgress.empty[Task]
+  private[sbt] def defaultProgress(): ExecuteProgress[Task, State] =
+    ExecuteProgress.empty[Task, State]
 
   val SystemProcessors = Runtime.getRuntime.availableProcessors
 
@@ -258,13 +259,22 @@ object EvaluateTask {
       extracted: Extracted,
       structure: BuildStructure,
       state: State
-  ): ExecuteProgress[Task] = {
+  ): ExecuteProgress[Task, State] = {
     state
       .get(currentTaskProgress)
       .map { tp =>
-        new ExecuteProgress[Task] {
+        new ExecuteProgress[Task, State] {
           val progress = tp.progress
           override def initial(): Unit = progress.initial()
+
+          override def beforeCommand(cmd: String, state: State): Unit = {
+            progress.beforeCommand(cmd, state)
+          }
+
+          override def afterCommand(cmd: String, result: Either[Throwable, State]): Unit = {
+            progress.afterCommand(cmd, result)
+          }
+
           override def afterRegistered(
               task: Task[_],
               allDeps: Iterable[Task[_]],
@@ -279,7 +289,9 @@ object EvaluateTask {
             progress.afterCompleted(task, result)
           override def afterAllCompleted(results: RMap[Task, Result]): Unit =
             progress.afterAllCompleted(results)
-          override def stop(): Unit = {}
+          override def stop(): Unit = {
+            progress.stop()
+          }
         }
       }
       .getOrElse {
@@ -294,9 +306,9 @@ object EvaluateTask {
              new TaskTimings(reportOnShutdown = false, state.globalLogging.full) :: Nil
            else Nil)
         reporters match {
-          case xs if xs.isEmpty   => ExecuteProgress.empty[Task]
+          case xs if xs.isEmpty   => ExecuteProgress.empty[Task, State]
           case xs if xs.size == 1 => xs.head
-          case xs                 => ExecuteProgress.aggregate[Task](xs)
+          case xs                 => ExecuteProgress.aggregate[Task, State](xs)
         }
       }
   }
@@ -502,7 +514,7 @@ object EvaluateTask {
       case _                => true
     }
     def run() = {
-      val x = new Execute[Task](
+      val x = new Execute[Task, State](
         Execute.config(config.checkCycles, overwriteNode),
         triggers,
         config.progressReporter
@@ -572,7 +584,7 @@ object EvaluateTask {
     case i                                                => i
   }
 
-  type AnyCyclic = Execute[({ type A[_] <: AnyRef })#A]#CyclicException[_]
+  type AnyCyclic = Execute[({ type A[_] <: AnyRef })#A, _]#CyclicException[_]
 
   def convertCyclicInc: Incomplete => Incomplete = {
     case in @ Incomplete(
@@ -580,7 +592,7 @@ object EvaluateTask {
           _,
           _,
           _,
-          Some(c: Execute[({ type A[_] <: AnyRef })#A @unchecked]#CyclicException[_])
+          Some(c: Execute[({ type A[_] <: AnyRef })#A @unchecked, _]#CyclicException[_])
         ) =>
       in.copy(directCause = Some(new RuntimeException(convertCyclic(c))))
     case i => i

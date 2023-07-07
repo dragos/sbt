@@ -52,10 +52,10 @@ final class Triggers[F[_]](
     val onComplete: RMap[F, Result] => RMap[F, Result]
 )
 
-private[sbt] final class Execute[F[_] <: AnyRef](
+private[sbt] final class Execute[F[_] <: AnyRef, S](
     config: Config,
     triggers: Triggers[F],
-    progress: ExecuteProgress[F]
+    progress: ExecuteProgress[F, S]
 )(implicit view: NodeView[F]) {
   type Strategy = CompletionService[F[_], Completed]
 

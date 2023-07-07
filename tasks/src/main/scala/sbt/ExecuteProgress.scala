@@ -16,8 +16,12 @@ import sbt.internal.util.RMap
  * which is called from the executing task's thread.
  * All methods should return quickly to avoid task execution overhead.
  */
-trait ExecuteProgress[F[_]] {
+trait ExecuteProgress[F[_], S] {
   def initial(): Unit
+
+  def beforeCommand(cmd: String, state: S): Unit = {}
+
+  def afterCommand(cmd: String, result: Either[Throwable, S]): Unit = {}
 
   /**
    * Notifies that a `task` has been registered in the system for execution.
@@ -65,7 +69,7 @@ trait ExecuteProgress[F[_]] {
 
 /** This module is experimental and subject to binary and source incompatible changes at any time. */
 object ExecuteProgress {
-  def empty[F[_]]: ExecuteProgress[F] = new ExecuteProgress[F] {
+  def empty[F[_], S]: ExecuteProgress[F, S] = new ExecuteProgress[F, S] {
     override def initial(): Unit = ()
     override def afterRegistered(
         task: F[_],
@@ -81,10 +85,19 @@ object ExecuteProgress {
     override def stop(): Unit = ()
   }
 
-  def aggregate[F[_]](reporters: Seq[ExecuteProgress[F]]) = new ExecuteProgress[F] {
+  def aggregate[F[_], S](reporters: Seq[ExecuteProgress[F, S]]) = new ExecuteProgress[F, S] {
     override def initial(): Unit = {
       reporters foreach { _.initial() }
     }
+
+    override def beforeCommand(cmd: String, state: S): Unit = {
+      reporters.foreach(_.beforeCommand(cmd, state))
+    }
+
+    override def afterCommand(cmd: String, result: Either[Throwable, S]): Unit = {
+      reporters.foreach(_.afterCommand(cmd, result))
+    }
+
     override def afterRegistered(
         task: F[_],
         allDeps: Iterable[F[_]],

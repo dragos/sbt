@@ -16,7 +16,7 @@ import scala.collection.mutable
 import scala.collection.immutable.VectorBuilder
 import scala.concurrent.duration._
 
-private[sbt] abstract class AbstractTaskExecuteProgress extends ExecuteProgress[Task] {
+private[sbt] abstract class AbstractTaskExecuteProgress extends ExecuteProgress[Task, State] {
   import AbstractTaskExecuteProgress.Timer
 
   private[this] val showScopedKey = Def.showShortKey(None)

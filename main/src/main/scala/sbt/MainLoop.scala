@@ -234,6 +234,9 @@ object MainLoop {
             }) -> progressState.put(Keys.terminalKey, Terminal(c.terminal))
           case _ => (() => ()) -> progressState.put(Keys.terminalKey, Terminal(ITerminal.get))
         }
+
+        val currentTaskProgress = progressState.get(sbt.Keys.currentTaskProgress)
+        currentTaskProgress.foreach(_.progress.beforeCommand(exec.commandLine, progressState))
         /*
          * FastTrackCommands.evaluate can be significantly faster than Command.process because
          * it avoids an expensive parsing step for internal commands that are easy to parse.
@@ -241,16 +244,25 @@ object MainLoop {
          * but slower.
          */
         val newState = try {
-          FastTrackCommands
+          val res = FastTrackCommands
             .evaluate(termState, exec.commandLine)
             .getOrElse(Command.process(exec.commandLine, termState))
+          currentTaskProgress.foreach(_.progress.afterCommand(exec.commandLine, Right(res)))
+          res
         } catch {
           case _: RejectedExecutionException =>
             // No stack trace since this is just to notify the user which command they cancelled
             object Cancelled extends Throwable(exec.commandLine, null, true, false) {
               override def toString: String = s"Cancelled: ${exec.commandLine}"
             }
+            currentTaskProgress
+              .foreach(_.progress.afterCommand(exec.commandLine, Left(Cancelled)))
             throw Cancelled
+
+          case e: Throwable =>
+            currentTaskProgress
+              .foreach(_.progress.afterCommand(exec.commandLine, Left(e)))
+            throw e
         } finally {
           // Flush the terminal output after command evaluation to ensure that all output
           // is displayed in the thin client before we report the command status. Also
